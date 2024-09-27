@@ -1,5 +1,58 @@
-paladin armor dragon wizard society
+#REHASHER & exohashing
 
+
+fakebob is for testnet only
+
+
+1 canister on bob subnet for reBOB
+
+dfx canister --network ic create --subnet bkfrj-6k62g-dycql-7h53p-atvkj-zg4to-gaogh-netha-ptybj-ntsgw-rqe
+
+they you should just need to replace the const reBobCanisterID = "bd3sg-teaaa-aaaaa-qaaba-cai"; line in App.tsx with the reBob canister id.
+(furst put cycles in ledger princple)
+
+then npm instal
+
+then npm start; it should build 
+
+then go into dfx.json and for the frontend and backend entries you'll need to add something like:
+
+"backend": {
+        "id": {
+          "ic": "rno2w-sqaaa-aaaaa-aaacq-cai",
+        }
+      },
+
+But backend will be your rebob canister and frontend will be your front end
+
+then dfx deploy --network ic backend
+then dfx deploy --network ic frontend
+
+it should build,
+
+You may need to update the compute allocation of the rebob canister to 1
+
+dfx canister --network ic update-settings backend --compute-allocation 1
+
+This will ensure you get scheduled to run at least every 100 rounds
+
+--
+
+notes:
+
+dfx,json may require reformatting to canister_ids.json
+
+{
+  "backend": {
+    "ic": "xxx"
+  },
+  "frontend": {
+    "ic": "xxx"
+  },
+  "rebob": {
+    "ic": "xxx"
+  }
+}
 
 
 # Vite + React + Motoko

@@ -31,12 +31,12 @@ const bobCanisterID =
   window.location.href.includes('localhost') ||
   window.location.href.includes('127.0.0.1')
     ? 'bd3sg-teaaa-aaaaa-qaaba-cai'
-    : 'zfcdd-tqaaa-aaaaq-aaaga-cai';
+    : '7pail-xaaaa-aaaas-aabmq-cai';
 const reBobCanisterID =
   window.location.href.includes('localhost') ||
   window.location.href.includes('127.0.0.1')
     ? 'bkyz2-fmaaa-aaaaa-qaaaq-cai'
-    : 'hjfd4-eqaaa-aaaam-adkmq-cai';
+    : 'qvwlv-uyaaa-aaaas-aidpq-cai';
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -74,10 +74,10 @@ function App() {
     // }); // Can't use plug actors as anonymous.
 
     // We will use the internet identity anonymous calls in the next update. ic0 will work for now.
-    const bobIcActor = await ic('zfcdd-tqaaa-aaaaq-aaaga-cai'); // hard coding this because it will work in local still.
+    const bobIcActor = await ic('7pail-xaaaa-aaaas-aabmq-cai'); // hard coding this because it will work in local still.
 
     const totalBobHeldResponse = await bobIcActor.call('icrc1_balance_of', {
-      owner: Principal.fromText('hjfd4-eqaaa-aaaam-adkmq-cai'), // hard coding this because it won't work with local of reBobCanisterID
+      owner: Principal.fromText('qvwlv-uyaaa-aaaas-aidpq-cai'), // hard coding this because it won't work with local of reBobCanisterID
       subaccount: [],
     });
 
