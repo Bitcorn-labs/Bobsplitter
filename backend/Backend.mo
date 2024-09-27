@@ -18,7 +18,7 @@ import ICRC2 "mo:icrc2-mo/ICRC2";
 import ICRC3 "mo:icrc3-mo/";
 import ICRC4 "mo:icrc4-mo/ICRC4";
 
-///Bob Token
+///DKP Token
 import Types "Types";
 import Blob "mo:base/Blob";
 import Int "mo:base/Int";
@@ -36,18 +36,21 @@ shared ({ caller = _owner }) actor class Token(
   let Set = ICRC1.Set;
   let Map = ICRC1.Map;
 
-  let ICPLedger : ICPTypes.Service = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai");
-  // let BOBLedger : ICPTypes.Service = actor ("7pail-xaaaa-aaaas-aabmq-cai");
-  let BOBLedger : ICPTypes.Service = actor ("bd3sg-teaaa-aaaaa-qaaba-cai"); // Use 7pail-xaaaa-aaaas-aabmq-cai for ic0
+  //let ICPLedger : ICPTypes.Service = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai");
+  //let DKPLedger : ICPTypes.Service = actor ("zfcdd-tqaaa-aaaaq-aaaga-cai");
+  let DKPLedger : ICPTypes.Service = actor ("bd3sg-teaaa-aaaaa-qaaba-cai"); // Use zfcdd-tqaaa-aaaaq-aaaga-cai for ic0
+
 
   type Account = ICRC1.Account;
 
+  let DKPFee = 100_000;
+
   let default_icrc1_args : ICRC1.InitArgs = {
-    name = ?"reBob - BOB on Bob";
-    symbol = ?"reBob";
+    name = ?"Dragon Paladin Wizard";
+    symbol = ?"DPW";
     logo = ?"data:image/png;base64,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";
     decimals = 6;
-    fee = ? #Fixed(10000);
+    fee = ? #Fixed(DKPFee);
     minting_account = ?{
       owner = _owner;
       subaccount = null;
@@ -424,7 +427,7 @@ shared ({ caller = _owner }) actor class Token(
 
   private func refund(caller : Principal, subaccount : ?[Nat8], amount : Nat, e : Text) : async* Result.Result<(Nat, Nat), Text> {
     try {
-      let result = await BOBLedger.icrc1_transfer({
+      let result = await DKPLedger.icrc1_transfer({
         from_subaccount = null;
         fee = null;
         to = {
@@ -445,13 +448,12 @@ shared ({ caller = _owner }) actor class Token(
   public shared ({ caller }) func deposit(subaccount : ?[Nat8], amount : Nat) : async Result.Result<(Nat, Nat), Text> {
     log.add(debug_show (Time.now()) # "trying deposit " # debug_show (subaccount));
 
-    if (amount < 10_000) {
-      // if they want to pay 1_000_000 * 2 transfer fee for 10_000 that's on them.
+    if (amount < DKPFee) {
       return #err("amount too low");
     };
 
     let result = try {
-      await BOBLedger.icrc2_transfer_from({
+      await DKPLedger.icrc2_transfer_from({
         to = {
           owner = Principal.fromActor(this);
           subaccount = null;
@@ -522,7 +524,7 @@ shared ({ caller = _owner }) actor class Token(
   public shared ({ caller }) func withdraw(subaccount : ?[Nat8], amount : Nat) : async Result.Result<(Nat, Nat), Text> {
     log.add(debug_show (Time.now()) # "trying withdraw " # debug_show (subaccount));
 
-    if (amount <= 1_000_000) {
+    if (amount <= DKPFee) {
       // Accounting for sending bob to the user from this canister. We pay the fee.
       return #err("amount too low");
     };
@@ -546,7 +548,7 @@ shared ({ caller = _owner }) actor class Token(
     };
 
     let result = try {
-      await BOBLedger.icrc1_transfer({
+      await DKPLedger.icrc1_transfer({
         to = {
           owner = caller;
           subaccount = subaccount;
@@ -555,7 +557,7 @@ shared ({ caller = _owner }) actor class Token(
         from_subaccount = null;
         memo = ?Blob.toArray("\d8\d9\b4\5f\41\5d\5a\c3\be\e5\21\2c\10\f4\bb\6d\07\52\7d\01\17\7e\58\e0\13\03\39\90\00\c5\a8\94"); //reBob Withdraw
         created_at_time = ?time64();
-        amount = amount - 1_000_000; // keep this amount as part of the transfer fee to keep our bob from being drained.
+        amount = amount - DKPFee; // keep this amount as part of the transfer fee to keep our bob from being drained.
       });
     } catch (e) {
       //put back
