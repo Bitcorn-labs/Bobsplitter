@@ -26,15 +26,14 @@ import BobWithdrawField from './components/BobWithdrawField';
 import bigintToFloatString from './bigIntToFloatString';
 import PlugLoginHandler from './components/PlugLoginHandler';
 import InternetIdentityLoginHandler from './components/InternetIdentityLoginHandler';
+import TokenManagement from './components/TokenManagement';
 
 const bobCanisterID =
-  window.location.href.includes('localhost') ||
-  window.location.href.includes('127.0.0.1')
+  process.env.DFX_NETWORK === 'local'
     ? 'bd3sg-teaaa-aaaaa-qaaba-cai'
     : '7pail-xaaaa-aaaas-aabmq-cai';
 const reBobCanisterID =
-  window.location.href.includes('localhost') ||
-  window.location.href.includes('127.0.0.1')
+  process.env.DFX_NETWORK === 'local'
     ? 'bkyz2-fmaaa-aaaaa-qaaaq-cai'
     : 'qvwlv-uyaaa-aaaas-aidpq-cai';
 
@@ -98,7 +97,7 @@ function App() {
   };
 
   useEffect(() => {
-    console.log('Component mounted, waiting for user to log in...');
+    //console.log('Component mounted, waiting for user to log in...');
     fetchTotalTokens();
     // checkLoggedIn();
 
@@ -109,7 +108,7 @@ function App() {
 
   useEffect(() => {
     // This code runs after `icpActor` and `icdvActor` have been updated.
-    console.log('actors updated', bobLedgerActor, reBobActor);
+    //console.log('actors updated', bobLedgerActor, reBobActor);
 
     fetchBalances();
     //fetchMinters();
@@ -133,21 +132,33 @@ function App() {
   //   }
   // };
 
+  const isValidPrincipal = (principalString: string): boolean => {
+    try {
+      Principal.fromText(principalString);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
+
   const getBobLedgerBalance = async () => {
     if (bobLedgerActor === null) return;
+
+    if (!isValidPrincipal(loggedInPrincipal)) return;
 
     const bobLedgerBalanceResponse = await bobLedgerActor.icrc1_balance_of({
       owner: Principal.fromText(loggedInPrincipal),
       subaccount: [],
     });
 
-    console.log('Fetching balances...', { bobLedgerBalanceResponse });
+    //console.log('Fetching balances...', { bobLedgerBalanceResponse });
 
     setBobLedgerBalance(bobLedgerBalanceResponse);
   };
 
   const getReBobLedgerBalance = async () => {
     if (reBobActor === null) return;
+    if (!isValidPrincipal(loggedInPrincipal)) return;
     const reBobLedgerBalanceResponse = await reBobActor.icrc1_balance_of({
       owner: Principal.fromText(loggedInPrincipal),
       subaccount: [],
@@ -155,7 +166,7 @@ function App() {
 
     setreBobLedgerBalance(reBobLedgerBalanceResponse);
 
-    console.log('Fetching balances...', { reBobLedgerBalanceResponse });
+    //console.log('Fetching balances...', { reBobLedgerBalanceResponse });
   };
 
   const getBobLedgerAllowance = async () => {
@@ -170,10 +181,10 @@ function App() {
 
     setBobLedgerAllowance(bobLedgerAllowanceResponse.allowance);
 
-    console.log(
-      'Fetching balances... (bobLedgerAllowanceResponse)',
-      bobLedgerAllowanceResponse.allowance
-    ); // Need to add check if response was good.
+    // console.log(
+    //   'Fetching balances... (bobLedgerAllowanceResponse)',
+    //   bobLedgerAllowanceResponse.allowance
+    // ); // Need to add check if response was good.
   };
 
   const getReBobLedgerAllowance = async () => {
@@ -188,10 +199,10 @@ function App() {
 
     setReBobLedgerAllowance(reBobLedgerAllowanceResponse.allowance); // Need to add check if response was good.
 
-    console.log(
-      'Fetching balances... (reBobLedgerAllowanceResponse)',
-      reBobLedgerAllowanceResponse.allowance
-    );
+    // console.log(
+    //   'Fetching balances... (reBobLedgerAllowanceResponse)',
+    //   reBobLedgerAllowanceResponse.allowance
+    // );
   };
 
   const fetchBalances = async () => {
@@ -203,7 +214,7 @@ function App() {
 
     //if (!isConnected) return;
 
-    console.log('Fetching balances...', bobLedgerActor, reBobActor);
+    // console.log('Fetching balances...', bobLedgerActor, reBobActor);
     if (bobLedgerActor === null || reBobActor === null) return;
     // Fetch balances (assuming these functions return balances in a suitable format)
 
@@ -295,7 +306,7 @@ function App() {
         loggedInPrincipal={loggedInPrincipal}
         setLoggedInPrincipal={setLoggedInPrincipal}
       />
-      {!isConnected || false ? (
+      {!isConnected ? (
         <></>
       ) : (
         <>
@@ -357,11 +368,44 @@ function App() {
                 cleanUp={cleanUp}
               />
             </div>
+
+            <div
+              style={{
+                border: '3px solid lightgrey',
+                padding: '10px',
+                width: '100%',
+                marginTop: '16px',
+              }}
+            >
+              <TokenManagement
+                loading={loading}
+                setLoading={setLoading}
+                tokens={[
+                  {
+                    tokenActor: bobLedgerActor,
+                    tokenFee: bobFee,
+                    tokenTicker: 'Bob',
+                    tokenDecimals: 8,
+                    tokenLedgerBalance: bobLedgerBalance,
+                  },
+                  {
+                    tokenActor: reBobActor,
+                    tokenFee: reBobFee,
+                    tokenTicker: 'reBob',
+                    tokenDecimals: 6,
+                    tokenLedgerBalance: reBobLedgerBalance,
+                  },
+                ]}
+                cleanUp={cleanUp}
+                loggedInPrincipal={loggedInPrincipal}
+                fetchBalances={fetchBalances}
+              />
+            </div>
           </div>
         </>
       )}
       <p className="read-the-docs">
-        Bitcorn Labs presents: build on bob Bob Click logos to learn more.
+        Bitcorn Labs presents: build on Bob Click logos to learn more.
       </p>
     </div>
   );
