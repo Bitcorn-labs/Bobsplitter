@@ -37,23 +37,31 @@ const InternetIdentityLoginHandler: React.FC<
   loggedInPrincipal,
   setLoggedInPrincipal,
 }) => {
-  // const [loggedInPrincipal, setLoggedInPrincipal] = useState('');
   const authClientRef = useRef<AuthClient | null>(null);
   const [authClient, setAuthClient] = useState<AuthClient | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [buttonToggle, setButtonToggle] = useState(false);
 
-  const identityProvider =
-    window.location.href.includes('localhost') ||
-    window.location.href.includes('127.0.0.1')
-      ? 'http://bw4dl-smaaa-aaaaa-qaacq-cai.localhost:4943'
-      : 'https://identity.ic0.app/';
+  const [identityProvider, setIdentityProvider] = useState<URL | null>(null);
 
-  const createAuthClient = async (): Promise<void> => {
-    setAuthClient(await AuthClient.create()); // Does this even need to be async?
+  const setupIdentityProvider = (option: number) => {
+    //0 for ic0.app; 1 for internetcomputer.org
+    if (
+      window.location.href.includes('localhost') ||
+      window.location.href.includes('127.0.0.1')
+    ) {
+      setIdentityProvider(
+        new URL('http://br5f7-7uaaa-aaaaa-qaaca-cai.localhost:4943')
+      );
+      return;
+    } else if (option === 0) {
+      setIdentityProvider(new URL('https://identity.ic0.app/'));
+    } else if (option === 1) {
+      setIdentityProvider(new URL('https://identity.internetcomputer.org/'));
+    }
   };
 
   const authClientLogin = async () => {
-    if (!authClient) return;
+    if (!authClient || !identityProvider) return;
 
     return new Promise<void>((resolve, reject) => {
       authClient.login({
@@ -72,40 +80,46 @@ const InternetIdentityLoginHandler: React.FC<
   };
 
   const login = async () => {
+    setLoading(true);
     await authClientLogin();
 
     if (!authClient) return;
 
-    const identity = await authClient.getIdentity();
+    const identity = authClient.getIdentity();
 
-    //console.log(identity.getPrincipal().toString());
     setLoggedInPrincipal(identity.getPrincipal().toString());
     setIsConnected(true);
     setConnectionType('ii');
     await createAgent();
+    setLoading(false);
   };
 
   useEffect(() => {
+    if (!identityProvider || !authClient) return;
+
     login();
-  }, [authClient]);
+  }, [identityProvider]);
+
+  const createAuthClient = async (): Promise<void> => {
+    setAuthClient(await AuthClient.create());
+  };
+
+  useEffect(() => {
+    createAuthClient(); //Need to check if already logged in on refresh!
+  }, []);
 
   const logout = async () => {
-    // if (!isAuthenticated) {
-    //   console.log("not logged in");
-    // }
     if (!authClient) return;
     if (authClient) {
       await authClient.logout();
       setIsConnected(false);
       setConnectionType('');
       setLoggedInPrincipal('');
-      setAuthClient(null);
       setreBobActor(null);
       setBobLedgerActor(null);
+      setIdentityProvider(null);
     }
   };
-
-  const [myAgent, setMyAgent] = useState<reBobService | null>(null);
 
   const createAgent = async () => {
     if (!authClient) {
@@ -145,21 +159,39 @@ const InternetIdentityLoginHandler: React.FC<
     );
   };
 
-  const setupInternetIdentity = async () => {
-    await createAuthClient();
-  };
-
-  const handleInternetIdentityLogin = () => {
-    setupInternetIdentity();
-  };
-
   return (
     <div>
       {!isConnected ? (
         <>
-          <button onClick={handleInternetIdentityLogin}>
-            Login with Internet Identity
-          </button>
+          {!buttonToggle ? (
+            <button
+              disabled={loading}
+              onClick={() => {
+                setButtonToggle(!buttonToggle);
+              }}
+            >
+              Login with Internet Identity
+            </button>
+          ) : (
+            <>
+              <button
+                disabled={loading}
+                onClick={() => {
+                  setupIdentityProvider(0);
+                }}
+              >
+                ic0.app
+              </button>
+              <button
+                disabled={loading}
+                onClick={() => {
+                  setupIdentityProvider(1);
+                }}
+              >
+                internetcomputer.org
+              </button>
+            </>
+          )}
         </>
       ) : connectionType === 'ii' ? (
         <>

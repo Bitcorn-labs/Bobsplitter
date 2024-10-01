@@ -26,6 +26,7 @@ import BobWithdrawField from './components/BobWithdrawField';
 import bigintToFloatString from './bigIntToFloatString';
 import PlugLoginHandler from './components/PlugLoginHandler';
 import InternetIdentityLoginHandler from './components/InternetIdentityLoginHandler';
+import TransactionBox from './components/TransactionBox';
 
 const bobCanisterID =
   window.location.href.includes('localhost') ||
@@ -294,7 +295,7 @@ function App() {
         loggedInPrincipal={loggedInPrincipal}
         setLoggedInPrincipal={setLoggedInPrincipal}
       />
-      {!isConnected || false ? (
+      {!isConnected ? (
         <></>
       ) : (
         <>
@@ -355,6 +356,25 @@ function App() {
                 reBobActor={reBobActor}
                 reBobCanisterID={reBobCanisterID}
                 cleanUp={cleanUp}
+              />
+            </div>
+            <div
+              style={{
+                border: '3px solid lightgrey',
+                padding: '10px',
+                width: '100%',
+                marginTop: '16px',
+              }}
+            >
+              <h2>Send Bobs:</h2>
+              <TransactionBox
+                loading={loading}
+                setLoading={setLoading}
+                tokenActor={bobLedgerActor}
+                tokenFee={bobFee}
+                tokenTicker="bob"
+                tokenDecimals={8}
+                tokenLedgerBalance={bobLedgerBalance}
               />
             </div>
           </div>
