@@ -45,10 +45,7 @@ const InternetIdentityLoginHandler: React.FC<
 
   const setupIdentityProvider = (option: number) => {
     //0 for ic0.app; 1 for internetcomputer.org
-    if (
-      window.location.href.includes('localhost') ||
-      window.location.href.includes('127.0.0.1')
-    ) {
+    if (process.env.DFX_NETWORK === 'local') {
       setIdentityProvider(
         new URL('http://br5f7-7uaaa-aaaaa-qaaca-cai.localhost:4943')
       );
@@ -108,6 +105,26 @@ const InternetIdentityLoginHandler: React.FC<
     createAuthClient(); //Need to check if already logged in on refresh!
   }, []);
 
+  const checkLoggedIn = async () => {
+    if (!authClient) return;
+
+    const authenticated = await authClient.isAuthenticated();
+    if (authenticated) {
+      const identity = authClient.getIdentity();
+
+      setLoggedInPrincipal(identity.getPrincipal().toString());
+      setIsConnected(true);
+      setConnectionType('ii');
+      await createAgent();
+    }
+  };
+
+  useEffect(() => {
+    if (!authClient) return;
+
+    checkLoggedIn();
+  }, [authClient]);
+
   const logout = async () => {
     if (!authClient) return;
     if (authClient) {
@@ -130,18 +147,18 @@ const InternetIdentityLoginHandler: React.FC<
 
     const agent = new HttpAgent({
       host:
-        window.location.href.includes('localhost') ||
-        window.location.href.includes('127.0.0.1')
+        process.env.DFX_NETWORK === 'local'
           ? 'http://localhost:4943'
-          : 'https://ic0.app/',
+          : String(identityProvider) ===
+            'https://identity.internetcomputer.org/'
+          ? 'https://internetcomputer.org'
+          : 'https://ic0.app/', // Will identityProvider work?
       identity: identity,
     });
 
-    if (
-      window.location.href.includes('localhost') ||
-      window.location.href.includes('127.0.0.1')
-    ) {
+    if (process.env.DFX_NETWORK === 'local') {
       agent.fetchRootKey();
+      console.log('aaa');
     }
 
     setreBobActor(

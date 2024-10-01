@@ -1,6 +1,7 @@
 import { Principal } from '@dfinity/principal';
-import { _SERVICE as genericTokenService } from '../declarations/nns-ledger/index.d';
-import { TextField, ThemeProvider } from '@mui/material';
+import { _SERVICE as bobService } from '../declarations/nns-ledger/index.d';
+import { _SERVICE as reBobService } from '../declarations/service_hack/service';
+import { InputAdornment, TextField, ThemeProvider } from '@mui/material';
 import { useEffect, useState } from 'react';
 import bigintToFloatString from '../bigIntToFloatString';
 import theme from '../theme';
@@ -8,11 +9,12 @@ import theme from '../theme';
 interface TransactionBoxProps {
   loading: boolean;
   setLoading: (value: boolean) => void;
-  tokenActor: genericTokenService | null;
+  tokenActor: bobService | reBobService | null;
   tokenFee: bigint;
   tokenTicker: string;
   tokenDecimals: number;
   tokenLedgerBalance: bigint;
+  cleanUp: () => void;
 }
 
 const TransactionBox: React.FC<TransactionBoxProps> = ({
@@ -23,6 +25,7 @@ const TransactionBox: React.FC<TransactionBoxProps> = ({
   tokenTicker,
   tokenDecimals,
   tokenLedgerBalance,
+  cleanUp,
 }) => {
   const [transactionFieldValue, setTransactionFieldValue] =
     useState<string>('');
@@ -32,12 +35,20 @@ const TransactionBox: React.FC<TransactionBoxProps> = ({
   const [buttonDisabled, setButtonDisabled] = useState<boolean>(false);
   const [textFieldValueTooLow, setTextFieldValueTooLow] =
     useState<boolean>(false);
-  const [textFieldErrored, setTextFieldErrored] = useState<boolean>(false);
+  const [valueFieldErrored, setValueFieldErrored] = useState<boolean>(false);
 
-  const minimumTransactionAmount = tokenFee + 1n;
+  const [principalField, setPrincipalField] = useState<string>('');
+  const [principalFieldErrored, setPrincipalFieldErrored] =
+    useState<boolean>(false);
+
+  const [remainder, setRemainder] = useState<string>('');
 
   const transfer = async (amountInE8s: bigint, toPrincipal: Principal) => {
     if (!tokenActor) return;
+
+    setLoading(true);
+
+    console.log({ amountInE8s, toPrincipal });
 
     try {
       // Call the token actor's icrc1_transfer function
@@ -53,6 +64,7 @@ const TransactionBox: React.FC<TransactionBoxProps> = ({
         created_at_time: [BigInt(Date.now()) * 1000000n],
       });
 
+      console.log({ result });
       // Handle the result
       if ('Ok' in result) {
         console.log(`Transfer successful! Transaction ID: ${result.Ok}`);
@@ -64,6 +76,10 @@ const TransactionBox: React.FC<TransactionBoxProps> = ({
     } catch (error) {
       console.error('Error during token transfer:', error);
       throw error;
+    } finally {
+      cleanUp();
+      setTransactionFieldValue('');
+      setPrincipalField('');
     }
   };
 
@@ -88,19 +104,56 @@ const TransactionBox: React.FC<TransactionBoxProps> = ({
         : 0n;
 
     // console.log(bobNatValue);
-    setButtonDisabled(natValue + minimumTransactionAmount > tokenLedgerBalance);
+    setButtonDisabled(natValue + tokenFee > tokenLedgerBalance);
 
-    setTextFieldValueTooLow(natValue < minimumTransactionAmount);
-    setTextFieldErrored(
-      (tokenLedgerBalance < minimumTransactionAmount && natValue > 0) ||
-        (tokenLedgerBalance >= minimumTransactionAmount &&
-          natValue + minimumTransactionAmount > tokenLedgerBalance)
+    setTextFieldValueTooLow(natValue < tokenFee);
+    setValueFieldErrored(
+      (tokenLedgerBalance < tokenFee && natValue > 0) ||
+        (tokenLedgerBalance >= tokenFee &&
+          natValue + tokenFee > tokenLedgerBalance)
     );
     setTransactionFieldNatValue(natValue);
+    if (tokenLedgerBalance - natValue - tokenFee > 0) {
+      setRemainder(
+        bigintToFloatString(
+          tokenLedgerBalance - natValue - tokenFee,
+          tokenDecimals
+        )
+      );
+    } else {
+      setRemainder('0');
+    }
   }, [transactionFieldValue, tokenLedgerBalance]);
 
   const handleTransaction = () => {
-    console.log('hi');
+    if (!isValidPrincipal(principalField)) return;
+    transfer(transactionFieldNatValue, Principal.fromText(principalField));
+  };
+
+  const handlePrincipalFieldChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setPrincipalField(event.target.value);
+    if (event.target.value === '') {
+      setPrincipalFieldErrored(false);
+    } else {
+      setPrincipalFieldErrored(!isValidPrincipal(event.target.value));
+    }
+  };
+
+  const isValidPrincipal = (principalString: string): boolean => {
+    try {
+      Principal.fromText(principalString);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const handleMaxClick = () => {
+    setTransactionFieldValue(
+      bigintToFloatString(tokenLedgerBalance - tokenFee, tokenDecimals)
+    );
   };
 
   return (
@@ -111,36 +164,66 @@ const TransactionBox: React.FC<TransactionBoxProps> = ({
           justifyContent: 'center',
           alignItems: 'start',
           width: '100%',
+          flexDirection: 'column',
         }}
       >
-        <TextField label="principal" />
-        <TextField
-          label={tokenTicker}
-          variant="filled"
-          value={transactionFieldValue}
-          onChange={handleTransactionFieldChange}
-          helperText={
-            buttonDisabled
-              ? `You don't have enough ${tokenTicker}!`
-              : textFieldValueTooLow
-              ? `You must input at least ${bigintToFloatString(
-                  minimumTransactionAmount,
-                  tokenDecimals
-                )} to transfer.`
-              : ''
-          }
-          error={textFieldErrored}
-          disabled={loading}
-          slotProps={{
-            input: {
-              inputMode: 'decimal', // Helps show the numeric pad with decimal on mobile devices
-            },
-          }}
-          style={{ width: '200px', minHeight: '84px' }} // Set a fixed width or use a percentage
-        />
-        <button onClick={handleTransaction} style={{ height: '56px' }}>
-          SEND
-        </button>
+        <div>
+          <div>
+            <div>{`Remaining: ${remainder} ${tokenTicker}s`}</div>
+          </div>
+          <div style={{ display: 'flex' }}>
+            <TextField
+              label="To Principal"
+              variant="filled"
+              onChange={handlePrincipalFieldChange}
+              value={principalField}
+              error={principalFieldErrored}
+              helperText={
+                principalFieldErrored ? 'Enter a valid principal!' : ''
+              }
+              disabled={loading}
+            />
+
+            <TextField
+              label={tokenTicker}
+              variant="filled"
+              value={transactionFieldValue}
+              onChange={handleTransactionFieldChange}
+              helperText={
+                buttonDisabled
+                  ? `You don't have enough ${tokenTicker}!`
+                  : textFieldValueTooLow
+                  ? `You must input at least ${bigintToFloatString(
+                      tokenFee,
+                      tokenDecimals
+                    )} to transfer.`
+                  : ''
+              }
+              error={valueFieldErrored}
+              disabled={loading}
+              slotProps={{
+                input: {
+                  inputMode: 'decimal', // Helps show the numeric pad with decimal on mobile devices
+                },
+              }}
+              style={{ width: '200px', minHeight: '84px' }} // Set a fixed width or use a percentage
+            />
+            <div>
+              <button style={{ height: '56px' }} onClick={handleMaxClick}>
+                MAX
+              </button>
+            </div>
+            <div>
+              <button
+                disabled={buttonDisabled || principalFieldErrored || loading}
+                onClick={handleTransaction}
+                style={{ height: '56px' }}
+              >
+                SEND
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </ThemeProvider>
   );

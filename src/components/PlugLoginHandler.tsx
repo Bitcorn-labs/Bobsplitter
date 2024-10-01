@@ -38,15 +38,21 @@ const PlugLoginHandler: React.FC<PlugLoginHandlerProps> = ({
   setLoggedInPrincipal,
 }) => {
   const checkConnection = async () => {
-    const connection = !!(await window.ic.plug.isConnected());
+    try {
+      const connection = !!(await window.ic.plug.isConnected());
 
-    setIsConnected(connection);
+      console.log({ connection });
 
-    if (connection) {
-      setConnectionType('plug');
-      return true;
-    } else {
-      setConnectionType('');
+      setIsConnected(connection);
+
+      if (connection) {
+        setConnectionType('plug');
+        return true;
+      } else {
+        setConnectionType('');
+        return false;
+      }
+    } catch {
       return false;
     }
   };
@@ -73,12 +79,12 @@ const PlugLoginHandler: React.FC<PlugLoginHandlerProps> = ({
   const setUpActors = async () => {
     console.log('Setting up actors...', bobCanisterID, reBobCanisterID);
 
-    const getreBobActor = await window.ic.plug.createActor({
-      canisterId: reBobCanisterID,
-      interfaceFactory: reBobFactory,
-    });
-
-    setreBobActor(getreBobActor);
+    setreBobActor(
+      await window.ic.plug.createActor({
+        canisterId: reBobCanisterID,
+        interfaceFactory: reBobFactory,
+      })
+    );
 
     setBobLedgerActor(
       await window.ic.plug.createActor({
@@ -117,8 +123,7 @@ const PlugLoginHandler: React.FC<PlugLoginHandlerProps> = ({
           // whitelist, host, and onConnectionUpdate need to be defined or imported appropriately
           whitelist: [bobCanisterID, reBobCanisterID],
           host:
-            window.location.href.includes('localhost') ||
-            window.location.href.includes('127.0.0.1')
+            process.env.DFX_NETWORK === 'local'
               ? 'http://127.0.0.1:4943'
               : 'https://ic0.app',
           onConnectionUpdate: async () => {
@@ -129,20 +134,14 @@ const PlugLoginHandler: React.FC<PlugLoginHandlerProps> = ({
             checkConnection();
           },
         });
-        if (
-          window.location.href.includes('localhost') ||
-          window.location.href.includes('127.0.0.1')
-        ) {
+        if (process.env.DFX_NETWORK === 'local') {
           await window.ic.plug.sessionManager.sessionData.agent.agent.fetchRootKey();
         }
         console.log('Connected with pubkey:', pubkey);
         await setIsConnected(true);
         setConnectionType('plug');
       } else {
-        if (
-          window.location.href.includes('localhost') ||
-          window.location.href.includes('127.0.0.1')
-        ) {
+        if (process.env.DFX_NETWORK === 'local') {
           await window.ic.plug.sessionManager.sessionData.agent.agent.fetchRootKey();
         }
         setIsConnected(true);
