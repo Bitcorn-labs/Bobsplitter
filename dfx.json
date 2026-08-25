@@ -22,12 +22,10 @@
       }
     },
     "frontend": {
-      "dependencies": ["backend"],
       "type": "assets",
       "source": ["dist/"]
     },
     "frontend-staging": {
-      "dependencies": ["backend-staging"],
       "type": "assets",
       "source": ["dist/"]
     },
