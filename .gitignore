@@ -54,3 +54,6 @@ sgldt_correct_base64.txt
 
 # Zone.Identifier files (Windows)
 *:Zone.Identifier 
+# Generated SNS proposal arguments: contain the proposing neuron id and a
+# multi-megabyte embedded wasm blob. Regenerate with scripts/make_proposal_args.py.
+proposal_args/
