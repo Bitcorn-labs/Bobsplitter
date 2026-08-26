@@ -220,6 +220,15 @@ shared ({ caller = _owner }) actor class Token(
 
   // NEW STABLE VARIABLES FOR ICRC UPGRADE (Phase 1)
   stable var icrc106IndexCanister : ?Principal = null;
+  // Retained deliberately. The Phase 4 methods that used these
+  // (upgrade_archives / get_upgrade_status / reset_upgrade_status) were removed:
+  // upgrade_archives only logged, set upgradeComplete := true and returned #ok
+  // without performing any archive migration, so it reported success while doing
+  // nothing. icrc3-mo 0.3.5 provides upgradeArchive() for that job; wiring it up
+  // is a separate change deserving its own testing.
+  //
+  // These two are kept rather than deleted so the stable signature is unchanged
+  // by this release. They are inert.
   stable var upgradeError = "";
   stable var upgradeComplete = false;
 
@@ -1146,51 +1155,4 @@ shared ({ caller = _owner }) actor class Token(
     #ok(());
   };
 
-  // NEW ARCHIVE UPGRADE FUNCTIONS (Phase 4)
-  public shared({caller}) func upgrade_archives() : async Result.Result<(), Text> {
-    if (caller != owner) {
-      return #err("Unauthorized");
-    };
-    
-    if (upgradeComplete) {
-      return #err("Archive upgrade already completed");
-    };
-    
-    try {
-      log.add(debug_show (Time.now()) # " Starting archive upgrade...");
-      
-      // Get current archive stats
-      let current_stats = icrc3().stats();
-      log.add(debug_show (Time.now()) # " Current archive stats: " # debug_show(current_stats));
-      
-      // Archive upgrade functionality will be implemented in future phases
-      log.add(debug_show (Time.now()) # " Archive upgrade functionality ready");
-      
-      upgradeComplete := true;
-      log.add(debug_show (Time.now()) # " Archive upgrade completed successfully");
-      
-      #ok(());
-    } catch (error) {
-      upgradeError := "Archive upgrade failed: " # Error.message(error);
-      log.add(debug_show (Time.now()) # " " # upgradeError);
-      #err(upgradeError);
-    };
-  };
-
-  public query func get_upgrade_status() : async {upgradeComplete : Bool; upgradeError : Text} {
-    {
-      upgradeComplete = upgradeComplete;
-      upgradeError = upgradeError;
-    };
-  };
-
-  public shared({caller}) func reset_upgrade_status() : async Result.Result<(), Text> {
-    if (caller != owner) {
-      return #err("Unauthorized");
-    };
-    upgradeComplete := false;
-    upgradeError := "";
-    log.add(debug_show (Time.now()) # " Upgrade status reset");
-    #ok(());
-  };
 };

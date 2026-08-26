@@ -225,11 +225,6 @@ type Token =
                               length: nat;
                               start: nat;
                             }) -> (GetTransactionsResponse) query;
-   get_upgrade_status: () ->
-    (record {
-       upgradeComplete: bool;
-       upgradeError: text;
-     }) query;
    holders: (min: opt nat, max: opt nat, prev: opt Account, take: opt nat) ->
     (vec record {
            Account;
@@ -264,9 +259,7 @@ type Token =
    icrc4_transfer_batch: (args: TransferBatchArgs) -> (TransferBatchResults);
    init: () -> ();
    is_authorized_fee_collector: ("principal": principal) -> (bool) query;
-   reset_upgrade_status: () -> (Result_1);
    stats: () -> (Stats) query;
-   upgrade_archives: () -> (Result_1);
    withdraw: (subaccount: opt vec nat8, amount: nat) -> (Result);
  };
 type Tip = 
