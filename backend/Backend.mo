@@ -38,6 +38,25 @@ shared ({ caller = _owner }) actor class Token(
   let Set = ICRC1.Set;
   let Map = ICRC1.Map;
 
+  // The minting account deliberately uses a NON-DEFAULT subaccount.
+  //
+  // Under ICRC-1 a transfer to the minting account is a burn. When the minting
+  // account is the canister's default account, anyone who sends sGLDT to this
+  // canister's principal destroys it -- the ledger returns Ok, waives the fee,
+  // and the GLDT backing it stays locked forever. Guarding icrc1_transfer alone
+  // is not enough: icrc2_transfer_from and icrc4_transfer_batch reach the same
+  // account. Moving the minting account off subaccount null closes every path at
+  // once, and makes an accidental send land in an ordinary, recoverable account.
+  //
+  // Must not be all-zero: an all-zero subaccount is treated as equivalent to
+  // null. The ASCII tag keeps it non-zero and self-documenting.
+  let minting_sub_account : Blob = Blob.fromArray([
+    0x6d, 0x69, 0x6e, 0x74, 0x69, 0x6e, 0x67, 0x00, // "minting\0"
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+
   let ICPLedger : ICPTypes.Service = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai");
   // let BOBLedger : ICPTypes.Service = actor ("7pail-xaaaa-aaaas-aabmq-cai");
   let BOBLedger : ICPTypes.Service = actor ("6c7su-kiaaa-aaaar-qaira-cai"); // GLDT Ledger
@@ -52,7 +71,7 @@ shared ({ caller = _owner }) actor class Token(
     fee = ? #Fixed(1000);
     minting_account = ?{
       owner = Principal.fromActor(this);
-      subaccount = null;
+      subaccount = ?minting_sub_account;
     };
     max_supply = null;
     min_burn_amount = ?1000;
@@ -128,7 +147,7 @@ shared ({ caller = _owner }) actor class Token(
               case (null) {
                 ?{
                   owner = Principal.fromActor(this);
-                  subaccount = null;
+                  subaccount = ?minting_sub_account;
                 };
               };
             };
@@ -423,7 +442,27 @@ shared ({ caller = _owner }) actor class Token(
   };
 
   public shared ({ caller }) func icrc1_transfer(args : ICRC1.TransferArgs) : async ICRC1.TransferResult {
-    switch (await* icrc1().transfer_tokens(caller, args, false, null)) {
+    // Reject transfers to the minting account (this canister). Under ICRC-1 such
+    // a transfer is a burn: the sGLDT is destroyed, supply drops, and the GLDT
+    // backing it stays locked in reserves with no way to release it. Callers must
+    // use withdraw() to unwrap. Without this guard the loss is silent -- the
+    // ledger returns Ok and even waives the transfer fee, so it is
+    // indistinguishable from an ordinary successful send. Already cost a user
+    // 8.08 sGLDT at production block 40071.
+    switch (await* icrc1().transfer_tokens(caller, args, false,
+      ?#Sync(
+        func<system>(
+          trx : ICRC1.Value,
+          trxtop : ?ICRC1.Value,
+          notification : ICRC1.TransactionRequestNotification,
+        ) : Result.Result<(ICRC1.Value, ?ICRC1.Value, ICRC1.TransactionRequestNotification), Text> {
+          if (notification.to.owner == Principal.fromActor(this)) {
+            return #err("Cannot transfer to the token canister - this would burn your tokens. Use withdraw() to unwrap.");
+          };
+          #ok((trx, trxtop, notification));
+        }
+      )
+    )) {
       case (#trappable(val)) val;
       case (#awaited(val)) val;
       case (#err(#trappable(err))) D.trap(err);
@@ -508,7 +547,10 @@ shared ({ caller = _owner }) actor class Token(
     let mintingAmount = amount;
 
     let newtokens = await* icrc1().mint_tokens(
-      Principal.fromActor(this),
+      // Must be the minting account's OWNER, which mint_tokens authorises
+      // against. Hardcoding this canister happens to match today, but breaks
+      // the moment the minting account is repointed at another principal.
+      icrc1().get_state().minting_account.owner,
       {
         to = {
           owner = caller;
@@ -606,6 +648,21 @@ shared ({ caller = _owner }) actor class Token(
                   created_at_time = ?time64(); // The time the burn operation was created.
                 },
               );
+
+              // Never discard this. The fee collector is this canister's own
+              // account, which is also the minting account, and minting to the
+              // minting account is rejected -- so this mint fails, the GLDT is
+              // retained as unbacked surplus, and nothing anywhere records it.
+              // icrc1().mint returns a plain TransferResult, NOT a Star -- it
+              // unwraps the Star internally and traps on the #err arms. Matching
+              // #trappable/#awaited/#err here compiles but never fires (moc
+              // M0146), so the failure would still be swallowed by `case (_)`.
+              switch (mintFeeResult) {
+                case (#Err(err)) {
+                  log.add(debug_show (Time.now()) # " conversion fee mint failed: " # debug_show (err));
+                };
+                case (#Ok(_)) {};
+              };
             };
           };
         };
@@ -617,8 +674,13 @@ shared ({ caller = _owner }) actor class Token(
       case (#Err(err)) {
         //put back
 
+        // The withdraw already burned the caller's sGLDT, so this refund is the
+        // only thing standing between a failed GLDT transfer and permanent loss
+        // of user funds. It passed `caller` -- the withdrawing user -- where
+        // mint_tokens authorises against the minting account owner, so it
+        // returned 401 every single time, and the result was discarded.
         let remintResult = await* icrc1().mint(
-          caller,
+          icrc1().get_state().minting_account.owner,
           {
             to = {
               owner = caller;
@@ -632,6 +694,15 @@ shared ({ caller = _owner }) actor class Token(
             created_at_time = ?time64(); // The time the burn operation was created.
           },
         );
+        switch (remintResult) {
+          case (#Err(reErr)) {
+            // Burned, not refunded, and not transferred out. Loud on purpose.
+            log.add(debug_show (Time.now()) # " CRITICAL: refund after failed withdraw did not mint back " # debug_show (amount) # " to " # debug_show (caller) # ": " # debug_show (reErr));
+            return #err("withdraw failed AND refund failed - funds burned, contact support. withdraw: " # debug_show (err) # " refund: " # debug_show (reErr));
+          };
+          case (#Ok(_)) {};
+        };
+
         log.add(debug_show (Time.now()) # "trying withdraw from " # debug_show (err));
         return #err("cannot withdraw - failed" # debug_show (err));
       };
