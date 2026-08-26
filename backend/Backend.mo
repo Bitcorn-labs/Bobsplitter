@@ -50,6 +50,12 @@ shared ({ caller = _owner }) actor class Token(
   //
   // Must not be all-zero: an all-zero subaccount is treated as equivalent to
   // null. The ASCII tag keeps it non-zero and self-documenting.
+  //
+  // NOTE: this applies at INSTALL only. The minting account lives in ledger
+  // state, so an upgrade does not move it -- an existing deployment needs a
+  // one-time admin_update_icrc1 #MintingAccount call. Production currently uses
+  // the deploying principal as its minting account, not this canister, so the
+  // burn address there is that principal until such a call is made.
   let minting_sub_account : Blob = Blob.fromArray([
     0x6d, 0x69, 0x6e, 0x74, 0x69, 0x6e, 0x67, 0x00, // "minting\0"
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -442,13 +448,22 @@ shared ({ caller = _owner }) actor class Token(
   };
 
   public shared ({ caller }) func icrc1_transfer(args : ICRC1.TransferArgs) : async ICRC1.TransferResult {
-    // Reject transfers to the minting account (this canister). Under ICRC-1 such
-    // a transfer is a burn: the sGLDT is destroyed, supply drops, and the GLDT
-    // backing it stays locked in reserves with no way to release it. Callers must
-    // use withdraw() to unwrap. Without this guard the loss is silent -- the
-    // ledger returns Ok and even waives the transfer fee, so it is
-    // indistinguishable from an ordinary successful send. Already cost a user
-    // 8.08 sGLDT at production block 40071.
+    // Reject transfers addressed to this canister. Whether such a transfer is a
+    // burn depends on the deployment: it is one only when the minting account is
+    // this canister's own account -- this file's default, but NOT what production
+    // runs, where the minting account is the deploying principal and that is the
+    // address which burns. Either way, sending here is a mistake; rejecting it
+    // turns a silent loss into a clear error. Callers unwrap via withdraw().
+    //
+    // This guard is necessary but NOT sufficient by itself: icrc2_transfer_from
+    // and icrc4_transfer_batch pass null validators and reach the same account.
+    // Verified on staging -- with only this guard in place, icrc4_transfer_batch
+    // to the canister returned Ok and destroyed the tokens. Moving the minting
+    // account off subaccount null is what closes every path; see
+    // minting_sub_account above.
+    //
+    // Accidental burns observed on production: 4 events, 32.17 sGLDT total
+    // (blocks 10011, 11210, 11231, 40071), all from one principal.
     switch (await* icrc1().transfer_tokens(caller, args, false,
       ?#Sync(
         func<system>(
@@ -548,8 +563,11 @@ shared ({ caller = _owner }) actor class Token(
 
     let newtokens = await* icrc1().mint_tokens(
       // Must be the minting account's OWNER, which mint_tokens authorises
-      // against. Hardcoding this canister happens to match today, but breaks
-      // the moment the minting account is repointed at another principal.
+      // against. The previous hardcoded Principal.fromActor(this) matches only
+      // when the minting account is this canister -- true for a fresh install
+      // from this file, but NOT for production, whose minting account owner is
+      // the deploying principal. Deployed there, the hardcoded form returns 401
+      // and EVERY wrap fails.
       icrc1().get_state().minting_account.owner,
       {
         to = {
@@ -649,14 +667,17 @@ shared ({ caller = _owner }) actor class Token(
                 },
               );
 
-              // Never discard this. The fee collector is this canister's own
-              // account, which is also the minting account, and minting to the
-              // minting account is rejected -- so this mint fails, the GLDT is
-              // retained as unbacked surplus, and nothing anywhere records it.
-              // icrc1().mint returns a plain TransferResult, NOT a Star -- it
+              // Never discard this. On production these mints SUCCEED -- 428 of
+              // them are on the ledger, each exactly the conversion fee -- because
+              // the collector is a normal account distinct from the minting
+              // account. That is a property of the deployment, not of the code:
+              // point the collector at the minting account and every mint fails,
+              // retaining GLDT as unbacked surplus with nothing recording it.
+              //
+              // icrc1().mint returns a plain TransferResult, NOT a Star: it
               // unwraps the Star internally and traps on the #err arms. Matching
-              // #trappable/#awaited/#err here compiles but never fires (moc
-              // M0146), so the failure would still be swallowed by `case (_)`.
+              // #trappable/#awaited/#err compiles but never fires (moc M0146),
+              // which would leave the failure swallowed by `case (_)`.
               switch (mintFeeResult) {
                 case (#Err(err)) {
                   log.add(debug_show (Time.now()) # " conversion fee mint failed: " # debug_show (err));
