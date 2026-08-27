@@ -8,12 +8,10 @@ import Principal "mo:base/Principal";
 import Time "mo:base/Time";
 import Timer "mo:base/Timer";
 
-import CertifiedData "mo:base/CertifiedData";
 import Nat64 "mo:base/Nat64";
 import CertTree "mo:cert/CertTree";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
-import Account "mo:icrc1-mo/ICRC1/Account";
 import ICRC2 "mo:icrc2-mo/ICRC2";
 import ICRC3 "mo:icrc3-mo/";
 import ICRC3Legacy "mo:icrc3-mo/legacy";
@@ -21,7 +19,6 @@ import ICRC4 "mo:icrc4-mo/ICRC4";
 import ClassPlus "mo:class-plus";
 
 ///GLDT Token
-import Types "Types";
 import Blob "mo:base/Blob";
 import Int "mo:base/Int";
 import ICPTypes "ICPTypes";
@@ -35,8 +32,6 @@ shared ({ caller = _owner }) actor class Token(
   }
 ) = this {
 
-  let Set = ICRC1.Set;
-  let Map = ICRC1.Map;
 
   // The minting account deliberately uses a NON-DEFAULT subaccount.
   //
@@ -63,7 +58,6 @@ shared ({ caller = _owner }) actor class Token(
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   ]);
 
-  let ICPLedger : ICPTypes.Service = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai");
   // let BOBLedger : ICPTypes.Service = actor ("7pail-xaaaa-aaaas-aabmq-cai");
   let BOBLedger : ICPTypes.Service = actor ("6c7su-kiaaa-aaaar-qaira-cai"); // GLDT Ledger
 
@@ -211,6 +205,8 @@ shared ({ caller = _owner }) actor class Token(
   stable var total_deposit_fees : Nat = 0;
   stable var total_withdraw_fees : Nat = 0;
   stable var total_ledger_fees : Nat = 0;
+  // Unused, and a stable variable cannot be removed without an explicit
+  // migration function (M0169), so it stays.
   stable var total_dead_gldt_collected : Nat = 0;
 
   stable var gldt_transaction_fee : Nat = 10_000_000;
@@ -229,16 +225,16 @@ shared ({ caller = _owner }) actor class Token(
   //
   // These two are kept rather than deleted so the stable signature is unchanged
   // by this release. They are inert.
+  // Set by the Phase 4 archive functions and read by nothing else. Retained for
+  // the same reason as above: dropping a stable variable breaks the upgrade.
   stable var upgradeError = "";
   stable var upgradeComplete = false;
 
-  let #v0_1_0(#data(icrc1_state_current)) = icrc1_migration_state;
+  // Refutable on purpose: traps at init if the migration state is not
+  // v0_1_0, so the assertion stays even though nothing reads the payload.
+  let #v0_1_0(#data(_)) = icrc1_migration_state;
 
   private var _icrc1 : ?ICRC1.ICRC1 = null;
-
-  private func get_icrc1_state() : ICRC1.CurrentState {
-    return icrc1_state_current;
-  };
 
   private func get_icrc1_environment() : ICRC1.Environment {
     {
@@ -286,13 +282,11 @@ shared ({ caller = _owner }) actor class Token(
     };
   };
 
-  let #v0_1_0(#data(icrc2_state_current)) = icrc2_migration_state;
+  // Refutable on purpose: traps at init if the migration state is not
+  // v0_1_0, so the assertion stays even though nothing reads the payload.
+  let #v0_1_0(#data(_)) = icrc2_migration_state;
 
   private var _icrc2 : ?ICRC2.ICRC2 = null;
-
-  private func get_icrc2_state() : ICRC2.CurrentState {
-    return icrc2_state_current;
-  };
 
   private func get_icrc2_environment() : ICRC2.Environment {
     {
@@ -312,13 +306,11 @@ shared ({ caller = _owner }) actor class Token(
     };
   };
 
-  let #v0_1_0(#data(icrc4_state_current)) = icrc4_migration_state;
+  // Refutable on purpose: traps at init if the migration state is not
+  // v0_1_0, so the assertion stays even though nothing reads the payload.
+  let #v0_1_0(#data(_)) = icrc4_migration_state;
 
   private var _icrc4 : ?ICRC4.ICRC4 = null;
-
-  private func get_icrc4_state() : ICRC4.CurrentState {
-    return icrc4_state_current;
-  };
 
   private func get_icrc4_environment() : ICRC4.Environment {
     {
@@ -338,7 +330,7 @@ shared ({ caller = _owner }) actor class Token(
     };
   };
 
-  private func updated_certification(cert : Blob, lastIndex : Nat) : Bool {
+  private func updated_certification(_cert : Blob, _lastIndex : Nat) : Bool {
     ct.setCertifiedData();
     return true;
   };
@@ -498,7 +490,6 @@ shared ({ caller = _owner }) actor class Token(
     Nat64.fromNat(Int.abs(Time.now()));
   };
 
-  let ONE_DAY = 86_400_000_000_000;
 
   stable var lastError : (Text, Int) = ("null", 0);
 
@@ -818,7 +809,7 @@ shared ({ caller = _owner }) actor class Token(
     return ICRC1.Vector.toArray(results);
   };
 
-  public query ({ caller }) func icrc2_allowance(args : ICRC2.AllowanceArgs) : async ICRC2.Allowance {
+  public query func icrc2_allowance(args : ICRC2.AllowanceArgs) : async ICRC2.Allowance {
     return icrc2().allowance(args.spender, args.account, false);
   };
 
@@ -1064,19 +1055,9 @@ shared ({ caller = _owner }) actor class Token(
   };
 
   /* /// Uncomment this code to establish have icrc1 notify you when a transaction has occured.
-  private func transfer_listener(trx: ICRC1.Transaction, trxid: Nat) : () {
-
-  };
-
   /// Uncomment this code to establish have icrc1 notify you when a transaction has occured.
-  private func approval_listener(trx: ICRC2.TokenApprovalNotification, trxid: Nat) : () {
-
-  };
-
   /// Uncomment this code to establish have icrc1 notify you when a transaction has occured.
-  private func transfer_from_listener(trx: ICRC2.TransferFromNotification, trxid: Nat) : () {
-
-  }; */
+ */
 
   // private stable var _init = false;
   // public shared(msg) func admin_init() : async () {
