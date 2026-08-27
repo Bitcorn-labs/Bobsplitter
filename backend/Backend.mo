@@ -510,20 +510,34 @@ shared ({ caller = _owner }) actor class Token(
   };
 
   private func refund(caller : Principal, subaccount : ?[Nat8], amount : Nat, e : Text) : async* Result.Result<(Nat, Nat), Text> {
-    try {
-      let result = await BOBLedger.icrc1_transfer({
+    let result = try {
+      await BOBLedger.icrc1_transfer({
         from_subaccount = null;
         fee = null;
         to = {
           owner = caller;
           subaccount = subaccount;
         };
-        memo = ?Blob.toArray("\98\5c\db\3b\74\ce\88\61\3a\35\ee\2e\0e\39\a9\f6\c5\1d\ee\e9\ea\53\89\2d\e8\da\53\da\de\46\57\64" : Blob); //"GLDT Return"
+        memo = ?Blob.toArray("\10\6e\f2\6a\37\5f\7f\bf\54\47\1c\63\8f\34\9a\83\79\19\8c\00\26\37\3c\32\66\fc\b3\16\f9\48\3b\3f" : Blob); // sha256("sGLDT Refund") - GLDT returned after a failed deposit mint
         created_at_time = ?time64();
         amount = amount;
       });
-    } catch (e) {
-      return #err("stuck funds");
+    } catch (trapped) {
+      log.add(debug_show (Time.now()) # " STUCK FUNDS - refund trapped: " # Error.message(trapped));
+      return #err("stuck funds - " # Error.message(trapped));
+    };
+
+    switch (result) {
+      case (#Err(refundErr)) {
+        // Pulled in, not minted, and not returned. Nothing here can recover it.
+        log.add(debug_show (Time.now()) # " STUCK FUNDS - refund rejected: " # debug_show (refundErr));
+        return #err(
+          "cannot transfer to minter " # e
+          # " and the refund was rejected: " # debug_show (refundErr)
+          # " - funds are stuck, contact the canister owner"
+        );
+      };
+      case (#Ok(_)) {};
     };
 
     return #err("cannot transfer to minter " # e);
@@ -549,19 +563,28 @@ shared ({ caller = _owner }) actor class Token(
           owner = caller;
           subaccount = subaccount;
         };
-        memo = ?Blob.toArray("\4d\03\4c\3e\2f\15\84\ae\3d\86\d6\70\a5\e2\7e\9b\ad\3c\14\17\a6\3c\d8\9e\9b\f9\37\01\35\8d\c3\0e" : Blob); //"sGLDT Deposit"
+        memo = ?Blob.toArray("\ef\93\96\49\86\b6\6c\36\e6\0c\8d\24\7e\fb\b8\56\70\2a\82\8a\2e\2d\42\72\de\1a\5f\ef\de\3b\27\8c" : Blob); // sha256("sGLDT Deposit") - GLDT pulled in on wrap
         created_at_time = ?time64();
         amount = amount;
       });
     } catch (e) {
-      log.add(debug_show (Time.now()) # "trying transfer from " # Error.message(e));
-      D.trap("cannot transfer from failed" # Error.message(e));
+      // Returned, not trapped: trapping rolls back this call's own state but
+      // cannot undo a transfer that already committed on the GLDT ledger, and
+      // nothing has moved value at this point. It bought only an unreadable
+      // IC0503 for the caller, where withdraw() returns a legible error.
+      let msg = "cannot pull GLDT - " # Error.message(e);
+      log.add(debug_show (Time.now()) # " deposit failed: " # msg);
+      return #err(msg);
     };
 
     let block = switch (result) {
       case (#Ok(block)) block;
       case (#Err(err)) {
-        D.trap("cannot transfer from failed" # debug_show (err));
+        // The ledger rejected the pull, so no GLDT moved and there is nothing
+        // to unwind.
+        let msg = "cannot pull GLDT - " # debug_show (err);
+        log.add(debug_show (Time.now()) # " deposit failed: " # msg);
+        return #err(msg);
       };
     };
 
@@ -588,7 +611,7 @@ shared ({ caller = _owner }) actor class Token(
         };
         amount = mintingAmount; // The number of tokens to mint.
         created_at_time = ?time64();
-        memo = ?("\6d\7a\68\d6\ce\4d\2f\8e\60\72\af\e3\73\91\c8\d8\67\b5\6f\69\35\bc\ca\9a\7b\d9\40\19\fd\6e\3c\16" : Blob); //"sGLDT mint"
+        memo = ?("\4c\3a\19\51\ad\a4\0c\64\fe\46\f1\c5\a4\90\ff\dc\d8\a6\c4\7e\12\1e\66\19\8c\b7\4a\ca\7b\2c\01\36" : Blob); // sha256("sGLDT Mint") - sGLDT issued against it
       },
     );
 
@@ -633,7 +656,7 @@ shared ({ caller = _owner }) actor class Token(
           case (?val) ?Blob.fromArray(val);
         }; // The subaccount from which tokens are burned.
         amount = amount; // Burn the full amount requested by user
-        memo = ?("\d8\d9\b4\5f\41\5d\5a\c3\be\e5\21\2c\10\f4\bb\6d\07\52\7d\01\17\7e\58\e0\13\03\39\90\00\c5\a8\94" : Blob); //sGLDT Withdraw
+        memo = ?("\f1\7e\c2\c1\a2\6c\f6\94\6b\b9\9c\56\9c\4a\4f\ca\67\e0\a9\9a\7d\ca\03\cd\43\76\28\06\96\a5\3b\e8" : Blob); // sha256("sGLDT Withdraw") - sGLDT burned on unwrap
         created_at_time = ?time64(); // The time the burn operation was created.
       },
     );
@@ -650,7 +673,7 @@ shared ({ caller = _owner }) actor class Token(
         };
         fee = null;
         from_subaccount = null;
-        memo = ?Blob.toArray("\d8\d9\b4\5f\41\5d\5a\c3\be\e5\21\2c\10\f4\bb\6d\07\52\7d\01\17\7e\58\e0\13\03\39\90\00\c5\a8\94"); //sGLDT Withdraw
+        memo = ?Blob.toArray("\f1\7e\c2\c1\a2\6c\f6\94\6b\b9\9c\56\9c\4a\4f\ca\67\e0\a9\9a\7d\ca\03\cd\43\76\28\06\96\a5\3b\e8"); // sha256("sGLDT Withdraw") - GLDT paid out
         created_at_time = ?time64();
         amount = amount - gldt_total_fee; // keep this amount as part of the transfer fee to keep our GLDT from being drained.
       },
@@ -671,7 +694,7 @@ shared ({ caller = _owner }) actor class Token(
                 {
                   to = fee_collector;
                   amount = gldt_conversion_fee; // Remint the same amount that was retained as conversion fee
-                  memo = ?("\d8\d9\b4\5f\41\5d\5a\c3\be\e5\21\2c\10\f4\bb\6d\07\52\7d\01\17\7e\58\e0\13\03\39\90\00\c5\a8\94" : Blob); //sGLDT Withdraw
+                  memo = ?("\36\13\83\7e\6d\02\00\82\5f\a5\71\ca\29\7f\97\19\30\88\ee\f5\53\aa\3f\48\db\01\49\1e\6a\c4\bc\27" : Blob); // sha256("sGLDT Fee") - conversion fee minted to the collector
                   created_at_time = ?time64(); // The time the burn operation was created.
                 },
               );
@@ -720,7 +743,7 @@ shared ({ caller = _owner }) actor class Token(
               }; // The subaccount from which tokens are burned.
             };
             amount = amount; // Remint the same amount that was burned
-            memo = ?("\d8\d9\b4\5f\41\5d\5a\c3\be\e5\21\2c\10\f4\bb\6d\07\52\7d\01\17\7e\58\e0\13\03\39\90\00\c5\a8\94" : Blob); //sGLDT Withdraw
+            memo = ?("\10\6e\f2\6a\37\5f\7f\bf\54\47\1c\63\8f\34\9a\83\79\19\8c\00\26\37\3c\32\66\fc\b3\16\f9\48\3b\3f" : Blob); // sha256("sGLDT Refund") - sGLDT re-minted after a failed payout
             created_at_time = ?time64(); // The time the burn operation was created.
           },
         );
@@ -1119,8 +1142,14 @@ shared ({ caller = _owner }) actor class Token(
     },
   );
 
+  // icrc2-mo hardcodes `icrc103:public_allowances = "true"` in its metadata, a
+  // claim that any principal may read any other's allowances. This canister
+  // exposes no ICRC-103 endpoint, so the claim is false as published, and
+  // production advertises it today. set_private_mode is idempotent, so running
+  // it on every upgrade also corrects an already-deployed canister.
   system func postupgrade() {
     ignore icrc1().init_metadata();
+    ignore icrc2().set_private_mode(false);
   };
   //re wire up the listener after upgrade
   //uncomment the following line to register the transfer_listener
